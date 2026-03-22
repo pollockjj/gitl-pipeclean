@@ -28,12 +28,12 @@ Violating any one of these invalidates your entire evaluation.
 
 ## Execution Contract
 
-This skill is executed by `{GATE_SCRIPT}`.
+This skill is executed by `scripts/run_qa_gate.py`.
 
 - Emit the structured verdict to stdout only.
 - Do not invoke any GitHub posting command directly.
 - Do not describe or depend on the caller's follow-up actions.
-- Posting is performed by the runner via `{POSTING_SCRIPT}`.
+- Posting is performed by the runner via `scripts/post_as_app.py`.
 
 ---
 
@@ -110,7 +110,11 @@ The issue repo (`OWNER/REPO`) is the authoritative source for issue body, commen
 
 - Fetch the evidence artifacts referenced by the submission from the issue repo first.
 - Do **not** assume that source files mentioned inside logs or AC prose live in the same repo.
-- Only fetch cross-repo source files if the criterion cannot be decided from the committed evidence artifact and the other repo is explicitly named.
+- Only fetch cross-repo source files if the criterion cannot be decided from the committed evidence artifact and the other repo is explicitly named by path or context.
+
+Example:
+- `evidence/issue{N}/slice1/test_config_conda.log` lives in the issue repo and is fetched from the issue repo
+- `tests/test_config_conda.py` may live in another repo; do not fetch it from the issue repo
 
 ---
 
@@ -134,7 +138,7 @@ If the acceptance criteria were extracted from an issue comment (e.g., a Slice N
 gh api /repos/{OWNER}/{REPO}/issues/{ISSUE_NUMBER}/comments?per_page=100 \
   --jq '[.[] | select(.body | test("Slice .* TDD Plan"))] | last | .user.login'
 ```
-The author MUST be `{TDD_BOT}`. If it is any other value, HOLD immediately with reason: `"Contract source provenance failure. TDD Plan comment author is '{actual_login}', expected {TDD_BOT}. The plan was not posted via the authorized posting protocol."`
+The author MUST be `gitl-tdd[bot]`. If it is any other value — including `pollockjj`, `github-actions[bot]`, or any other identity — HOLD immediately with reason: `"Contract source provenance failure. TDD Plan comment author is '{actual_login}', expected gitl-tdd[bot]. The plan was not posted via the authorized posting protocol."`
 
 **Record your contract:**
 ```
@@ -162,9 +166,9 @@ After locating the submission comment, verify its authorship:
 ```bash
 gh api /repos/{OWNER}/{REPO}/issues/comments/{COMMENT_ID} --jq '.user.login'
 ```
-The author MUST be `{TDD_BOT}`. If it is any other value:
+The author MUST be `gitl-tdd[bot]`. If it is any other value:
 - HOLD immediately
-- Reason: `"Submission provenance failure. Comment author is '{actual_login}', expected {TDD_BOT}. The submission was not posted via the authorized posting protocol."`
+- Reason: `"Submission provenance failure. Comment author is '{actual_login}', expected gitl-tdd[bot]. The submission was not posted via the authorized posting protocol."`
 - Do NOT proceed to Phase 3 evidence acquisition
 
 **Explicit NOT DONE rule:** If the submission comment explicitly lists criteria as "NOT DONE," "Skipped," or equivalent, those criteria are **NOT MET**. This is ground truth. Do not search for contradicting evidence. Do not look for nuance.
@@ -224,8 +228,8 @@ A fetch failure is not a reason to proceed as if the artifact exists. Failed fet
 If the contract explicitly maps an AC to a committed artifact produced by a named command, evaluate the AC against that artifact first.
 
 Examples:
-- If AC says `pytest ... | tee evidence/sliceN/test_x.log` verifies the criterion, the fetched `test_x.log` is the primary proof artifact.
-- If AC says `ruff ... && mypy ... | tee evidence/sliceN/quality_gates.log` verifies the criterion, the fetched `quality_gates.log` is the primary proof artifact.
+- If AC says `pytest ... | tee evidence/issue{ISSUE_NUMBER}/sliceN/test_x.log` verifies the criterion, the fetched `test_x.log` is the primary proof artifact.
+- If AC says `ruff ... && mypy ... | tee evidence/issue{ISSUE_NUMBER}/sliceN/quality_gates.log` verifies the criterion, the fetched `quality_gates.log` is the primary proof artifact.
 
 Do not demand extra corroboration unless:
 - the fetched artifact is missing,
@@ -337,15 +341,25 @@ All {N} criteria met with positive fetched evidence. Slice {N} is cleared.
 
 These two cases are ground truth. If your output on either differs, you have a procedure violation — not a judgment call.
 
-**Case A — Forced HOLD:**
-N acceptance criteria. Submission explicitly lists all N as "NOT DONE."
-→ HOLD. N × NOT MET. Phase 2 explicit NOT DONE rule applies immediately. No artifact fetch required to confirm what the submission already admits.
+**Case A — Forced HOLD (the-repo#7, Slice 6):**
+10 acceptance criteria. Submission explicitly lists all 10 as "NOT DONE."
+→ HOLD. 10 × NOT MET. Phase 2 explicit NOT DONE rule applies immediately. No artifact fetch required to confirm what the submission already admits.
 
 **Case B — Forced PASS:**
 N acceptance criteria. Each criterion has a fetched artifact (test output, commit diff, CI status) that directly and positively demonstrates satisfaction.
 → PASS. N × MET. Every E-reference populated in the evidence log.
 
 Any result other than these on these specific inputs is a protocol failure.
+
+---
+
+## Invocation Protocol
+
+This skill runs as a one-shot evaluation via `scripts/run_qa_gate.py`.
+
+The caller invokes that script as one blocking terminal call and waits for it to exit. The caller should allow up to 300 seconds before treating the run as failed or stuck.
+
+**Output format:** The exact Structured Output format defined in Phase 6 of this skill. Nothing else.
 
 ---
 

@@ -1,0 +1,1 @@
+188:- **Always use `pytest -v`** — verbose mode is mandatory so test names appear in logs. Quiet mode (`-q`) hides test names and causes INSUFFICIENT_EVIDENCE HOLDs.

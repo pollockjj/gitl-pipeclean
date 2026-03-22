@@ -23,7 +23,7 @@ description: "Adversarial gate for TDD plan documents. ACTIVATE when: (1) user s
 
 ## Execution Contract
 
-This skill is executed by `{GATE_SCRIPT}`.
+This skill is executed by `scripts/run_qa_gate.py`.
 
 - Emit the structured verdict to stdout only.
 - Do not invoke any GitHub posting command directly.
@@ -35,7 +35,7 @@ This skill is executed by `{GATE_SCRIPT}`.
 
 Before proceeding, confirm you have one of:
 
-- [ ] File path to the plan document (e.g., `PLAN_{ISSUE_NUMBER}.md`)
+- [ ] File path to the plan document (e.g., `/tmp/plan_issue_body.md`)
 - [ ] GitHub issue URL or number containing the plan body
 
 **If neither is available: HOLD immediately.** Reason: "No plan document provided."
@@ -56,13 +56,13 @@ After fetching the plan document, verify its provenance:
     -F owner={OWNER} -F repo={REPO} -F num={ISSUE_NUMBER} \
     --jq '.data.repository.issue.editor.login'
   ```
-  The login must be `{TDD_BOT}`. If the editor is a human user or null, the plan was not posted via the authorized protocol. HOLD immediately with reason: `"Plan body provenance failure. Last editor is '{login}', expected {TDD_BOT}. Plan was not posted via the authorized posting protocol."`
+  The login must be `gitl-tdd` or `gitl-tdd[bot]`. If the editor is a human user (e.g., `pollockjj`) or null, the plan was not posted via the authorized protocol. HOLD immediately with reason: `"Plan body provenance failure. Last editor is '{login}', expected gitl-tdd. Plan was not posted via scripts/post_as_app.py."`
 
 - **If the plan is an issue comment:** Fetch the comment and verify authorship:
   ```bash
   gh api /repos/{OWNER}/{REPO}/issues/comments/{COMMENT_ID} --jq '.user.login'
   ```
-  The author MUST be `{TDD_BOT}`. If it is any other value, HOLD immediately with reason: `"Plan comment provenance failure. Author is '{actual_login}', expected {TDD_BOT}. Plan was not posted via the authorized posting protocol."`
+  The author MUST be `gitl-tdd[bot]`. If it is any other value — including `pollockjj`, `github-actions[bot]`, or any other identity — HOLD immediately with reason: `"Plan comment provenance failure. Author is '{actual_login}', expected gitl-tdd[bot]. Plan was not posted via the authorized posting protocol."`
 
 Read the full document before beginning any check. Do not evaluate from a truncated view.
 
@@ -149,13 +149,13 @@ Evaluate each check independently. Assign exactly one status:
 **Question:** Does every slice Objective describe what the slice *proves*, not what it *implements*?
 
 **MET:** Every Objective is phrased as a verification goal. Examples that pass:
-- "Prove that function_x does not double-unlink under condition Y"
-- "Verify isolated output matches expected output within tolerance"
+- "Prove that purge_orphan_sender_shm_files does not double-unlink under SIGKILL'd child exit"
+- "Verify isolated output tensors match host tensors within tolerance"
 
 **NOT MET:** Any Objective is phrased as an implementation task. Examples that fail:
-- "Implement the guard"
-- "Add resolution logic"
-- "Fix the bug"
+- "Implement the IPC guard"
+- "Add CUDA wheel resolution"
+- "Fix the SIGABRT bug"
 
 **Severity: BLOCKER** — implementation objectives produce implementation ACs, not verification ACs.
 
@@ -176,7 +176,7 @@ For every AC in every slice, verify it contains at least one of:
 ```
 "all tests pass"       "no errors"          "works correctly"
 "integration tests"    "unit tests pass"    "quality gates pass"  (without specifics)
-"system is stable"     "no crashes"         "functions as expected"
+"CUDA is stable"       "no crashes"         "functions as expected"
 ```
 
 **Severity: BLOCKER**
@@ -188,7 +188,7 @@ For every AC in every slice, verify it contains at least one of:
 **Question:** Does satisfying every AC require committing a verifiable artifact that the `qa` skill can fetch?
 
 For every AC, verify it specifies at least one committed artifact:
-- A file path under `evidence/sliceN/` with a specific filename
+- A file path under `evidence/issue{ISSUE_NUMBER}/sliceN/` with a specific filename
 - A commit SHA
 - A CI run URL or run ID
 - An inline log artifact referenced by name
@@ -210,7 +210,7 @@ For each AC, ask: if the code were reverted to the broken state, would this AC p
 
 **Specific patterns that fail diagnostic fit:**
 - ACs that only test the happy path when the bug manifests on a specific failure path
-- ACs for race conditions that don't exercise the race window
+- ACs for race conditions that don't exercise the race window (e.g., no SIGKILL, no concurrent access)
 - ACs that check post-conditions without verifying the specific invariant the bug violated
 - Quality gate ACs (ruff, mypy) standing alone as the only AC for a correctness fix
 
@@ -235,7 +235,7 @@ For each AC, ask: if the code were reverted to the broken state, would this AC p
 - Verification Strategy: what test would fail before and pass after
 
 **MET:** All six elements present with specific citations.
-**NOT MET:** Any element missing, vague, or unsubstantiated by file/line references.
+**NOT MET:** Any element missing, vague ("the IPC code needs to be fixed"), or unsubstantiated by file/line references.
 
 **Severity: BLOCKER** — a plan built on an unconfirmed diagnosis will implement the wrong fix.
 
@@ -251,7 +251,7 @@ For each AC, verify that the evidence it specifies:
 3. Cannot be satisfied by the implementer's assertion that it was done
 
 **MET:** Every AC requires an artifact fetch to evaluate.
-**NOT MET:** Any AC can be evaluated from the submission comment alone.
+**NOT MET:** Any AC can be evaluated from the submission comment alone. Example of failure: "AC-3: output tensor matches — paste the comparison result in your submission comment."
 
 **Severity: BLOCKER**
 
@@ -285,7 +285,7 @@ For each Slice N, verify:
 - "Slice N+1 may assume Slice N PASSed" — and only that
 
 **MET:** Every slice is independently executable given all prior slices.
-**NOT MET:** Any slice assumes future work or its ACs cannot be evaluated until a later slice exists.
+**NOT MET:** Any slice assumes future work, assumes unsliced behavior, or its ACs cannot be evaluated until a later slice exists.
 
 **Severity: BLOCKER**
 
@@ -385,7 +385,7 @@ Plan contains AC: "All integration tests pass — verified by running pytest."
 → HOLD. Fails Check 5 (no specific test named), Check 6 (no committed artifact), Check 9 (ghost-readable). Three blockers. The reviewer does not soften this because the rest of the plan is good.
 
 **Case B — Forced PASS:**
-Plan for a correctness fix. All 6 slices have objectives phrased as proof goals. Every AC names a specific pytest invocation, a specific log file under evidence/sliceN/, a specific SHA condition, and would fail if the guard were absent.
+Plan for CUDA IPC fix. All 6 slices have objectives phrased as proof goals. Every AC names a specific pytest invocation, a specific log file under evidence/issue{ISSUE_NUMBER}/sliceN/, a specific SHA condition, and would fail if the refcount guard were absent.
 → PASS. All 12 checks MET.
 
 Any deviation from these on these inputs is a protocol failure.
@@ -394,19 +394,29 @@ Any deviation from these on these inputs is a protocol failure.
 
 ## Interlock Position
 
-This skill sits at a specific point in the pipeline:
+This skill sits at a specific point in the stool:
 
 ```
 tdd-plan Phase 6 (present) → qa-plan (this skill) → tdd-plan Phase 7 (create issue)
-                                                              ↓
-                                                   tdd-slice (execute)
-                                                              ↓
-                                                        qa (gate)
+                                                               ↓
+                                                    tdd-slice (execute)
+                                                               ↓
+                                                         qa (gate)
 ```
 
-A PASS from this skill is the unlock for `tdd-plan Phase 7`. It does not unlock execution — that requires the human's explicit approval on the plan after review. PASS means the plan is *reviewable*. Human approval means it gets created.
+A PASS from this skill is the unlock for `tdd-plan Phase 7`. It does not unlock execution — that requires the human's explicit approval on the plan after review. PASS means the plan is *reviewable*. the human's approval means it gets created.
 
 A HOLD from this skill means the plan goes back to `tdd-plan` for revision. The planner re-runs Phases 3–6 and resubmits.
+
+---
+
+## Invocation Protocol
+
+This skill runs as a one-shot evaluation via `scripts/run_qa_gate.py`.
+
+The caller invokes that script as one blocking terminal call and waits for it to exit. The caller should allow up to 300 seconds before treating the run as failed or stuck.
+
+**Output format:** The exact Structured Output format defined in this skill's Structured Output section. Nothing else.
 
 ---
 

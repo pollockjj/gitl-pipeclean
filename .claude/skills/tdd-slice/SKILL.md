@@ -21,9 +21,9 @@ IF no GitHub issue tracking this work:
 IF previous slice has not received QA PASS on the issue:
     REFUSE — "Slice N-1 not QA-cleared. Await gate."
 
-IF previous slice QA PASS comment author.login ≠ "{QA_BOT}":
+IF previous slice QA PASS comment author.login ≠ "gitl-qa[bot]":
     REFUSE — "Slice N-1 QA PASS has invalid provenance.
-    Expected author: {QA_BOT}
+    Expected author: gitl-qa[bot]
     Actual author: {actual_login}
     The QA verdict was not posted via the authorized posting protocol."
 ```
@@ -37,32 +37,58 @@ gh api /repos/{OWNER}/{REPO}/issues/{ISSUE_NUMBER}/comments?per_page=100 \
   --jq '[.[] | select(.body | test("Decision\\\\([0-9]+\\\\): PASS")) | select(.body | test("Slice '"$((N-1))"'"))] | last | .user.login'
 ```
 
-The returned login MUST be exactly `{QA_BOT}`. Any other value is a provenance failure. STOP immediately.
+The returned login MUST be exactly `gitl-qa[bot]`. Any other value — including `pollockjj`, `github-actions[bot]`, or any other bot — is a provenance failure. STOP immediately.
 
 ---
 
 ## ⛔ Critical Prohibitions
 
-- **NO** self-approval — you do not issue your own QA verdict
-- **NO** proceeding to the next slice without a QA PASS comment on the issue
-- **NO** destructive file operations (`rm -rf`, etc.) without explicit human approval
-- **NO** writing to `/tmp/` — use workspace directories only
-- **NO** installing packages into the host environment unless the plan explicitly requires it
+- **NO** `pkill`, `kill` commands
+- **NO** `rm -rf` or destructive file operations
+- **NO** Direct application launch — use the designated test runner
+- **NO** Writing to `/tmp/` — use workspace directories only
+- **NO** Installing packages into host venv — isolation deps go in isolated venv only
+- **NO** Self-approval — you do not issue your own QA verdict
+- **NO** Proceeding to the next slice without a QA PASS comment on the issue
 
 ---
 
 ## GitHub Posting Protocol
 
-All GitHub posts route through `{POSTING_SCRIPT}`. **Never use `gh issue comment`, `gh api`, or any other direct posting mechanism.**
+All GitHub posts route through `scripts/run_tdd_post.py`. **Never use `gh issue comment`, `gh api`, `scripts/post_as_app.py`, or any other direct posting mechanism.**
 
 | Action | Command |
 |:--|:--|
-| Post comment | `{POSTING_SCRIPT} comment {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
-| Update issue body | `{POSTING_SCRIPT} update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
+| Post comment | `scripts/run_tdd_post.py comment {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
+| Update issue body | `scripts/run_tdd_post.py update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
 
-- **Identity:** posts as `{TDD_BOT}`
-- The posting script authenticates via JWT, posts, verifies the post landed, and prints the URL. Exits non-zero with FATAL on any failure.
+- **Identity:** posts as `gitl-tdd[bot]`
+- The runner resolves the correct Python interpreter, then delegates to `post_as_app.py`, which authenticates via JWT, posts, verifies the post landed, and prints the URL. Exits non-zero with FATAL on any failure.
 - Record the printed URL immediately after every post.
+- **Posting responsibility:** This skill invokes the runner directly — do NOT invoke `post_as_app.py` directly.
+
+---
+
+## Allowed Commands
+
+```yaml
+allowed:
+  - <your test runner> *
+  - debug/reset_gpu.sh
+  - python -m ruff check *
+  - python -m mypy *
+  - python -m pytest *
+  - git add, git commit, git status, git diff, git log
+  - scripts/run_tdd_post.py (per GitHub Posting Protocol)
+  - gh issue view, gh issue edit
+  - ls, sha256sum, diff
+
+forbidden:
+  - pkill, kill
+  - rm -rf
+  - python main.py
+  - pip install (into host venv)
+```
 
 ---
 
@@ -107,7 +133,7 @@ The issue comment MUST contain a section formatted exactly as follows. Deviation
 
 **Post per the GitHub Posting Protocol:**
 ```bash
-{POSTING_SCRIPT} comment {OWNER}/{REPO} {ISSUE_NUMBER} evidence/issue{ISSUE_NUMBER}/sliceN/phase1_plan.md
+scripts/run_tdd_post.py comment {OWNER}/{REPO} {ISSUE_NUMBER} evidence/issue{ISSUE_NUMBER}/sliceN/phase1_plan.md
 ```
 Record the printed URL — you will reference it in Phase 5.
 
@@ -117,9 +143,9 @@ After posting, extract the comment ID from the returned URL and verify authorshi
 COMMENT_ID=$(echo "$URL" | grep -oP '\d+$')
 AUTHOR=$(gh api /repos/{OWNER}/{REPO}/issues/comments/$COMMENT_ID --jq '.user.login')
 ```
-The author MUST be `{TDD_BOT}`. If it is any other value:
+The author MUST be `gitl-tdd[bot]`. If it is any other value:
 - STOP immediately
-- Report: `"FATAL: Phase 1 post provenance failure. Expected: {TDD_BOT}, Got: {AUTHOR}. Post was not made via authorized protocol."`
+- Report: `"FATAL: Phase 1 post provenance failure. Expected: gitl-tdd[bot], Got: {AUTHOR}. Post was not made via authorized protocol."`
 - Do NOT proceed to Phase 2
 
 ---
@@ -128,9 +154,10 @@ The author MUST be `{TDD_BOT}`. If it is any other value:
 
 Execute the code changes defined in the plan for this slice.
 
+- Follow `/execute` mode rules: quality gates, fail loud, no silent failures
 - Match plan scope exactly — no scope creep, no "while I'm here" additions
-- Fail loud — encountering a problem and proceeding silently is forbidden
-- Follow any project-specific constraints defined in the plan's Constraints section
+- Run with `<your isolation flags>` for isolated runs
+- No isolation deps in host venv
 
 ---
 
@@ -158,6 +185,8 @@ EVIDENCE MANIFEST — Slice N
 - Save artifacts to `evidence/issue{ISSUE_NUMBER}/sliceN/`
 - Every artifact gets a sha256sum
 - Zero triage items unless explicitly waived in TDD plan
+- **Always use `pytest -v`** — verbose mode is mandatory so test names appear in logs. Quiet mode (`-q`) hides test names and causes INSUFFICIENT_EVIDENCE HOLDs.
+- **Commit all evidence in a single commit** before Phase 4 submission. One SHA to reference, not multiple.
 
 **If a test fails:** Do not proceed. Fix, re-run, re-collect. Report what broke and what you did.
 
@@ -220,7 +249,7 @@ Post results to the GitHub issue as a structured submission comment. The QA gate
 
 **Post per the GitHub Posting Protocol:**
 ```bash
-{POSTING_SCRIPT} comment {OWNER}/{REPO} {ISSUE_NUMBER} evidence/issue{ISSUE_NUMBER}/sliceN/phase4_results.md
+scripts/run_tdd_post.py comment {OWNER}/{REPO} {ISSUE_NUMBER} evidence/issue{ISSUE_NUMBER}/sliceN/phase4_results.md
 ```
 Record the printed URL immediately.
 
@@ -230,16 +259,16 @@ After posting, extract the comment ID from the returned URL and verify authorshi
 COMMENT_ID=$(echo "$URL" | grep -oP '\d+$')
 AUTHOR=$(gh api /repos/{OWNER}/{REPO}/issues/comments/$COMMENT_ID --jq '.user.login')
 ```
-The author MUST be `{TDD_BOT}`. If it is any other value:
+The author MUST be `gitl-tdd[bot]`. If it is any other value:
 - STOP immediately
-- Report: `"FATAL: Phase 4 post provenance failure. Expected: {TDD_BOT}, Got: {AUTHOR}. Post was not made via authorized protocol."`
+- Report: `"FATAL: Phase 4 post provenance failure. Expected: gitl-tdd[bot], Got: {AUTHOR}. Post was not made via authorized protocol."`
 - Do NOT proceed to Phase 5
 
 ---
 
 ### Phase 5 — QA Gate Invocation (Autonomous)
 
-Invoke the QA gate programmatically via the gate runner script. Do not evaluate your own submission.
+Invoke the QA gate programmatically via the self-contained gate runner script. Do not evaluate your own submission.
 
 **Label transition:** Swap to `qa-slice` before invoking gate:
 ```bash
@@ -249,7 +278,7 @@ gh issue edit {ISSUE_NUMBER} -R {OWNER}/{REPO} --remove-label "tdd-slice" --add-
 #### Gate Invocation
 
 ```bash
-{GATE_SCRIPT} slice {OWNER}/{REPO} {ISSUE_NUMBER} {SLICE_NUMBER} {SUBMISSION_COMMENT_URL}
+scripts/run_qa_gate.py slice {OWNER}/{REPO} {ISSUE_NUMBER} {SLICE_NUMBER} {SUBMISSION_COMMENT_URL}
 ```
 
 Run that command directly as one blocking terminal call. Wait up to 300 seconds for it to exit before treating it as failed or stuck.
@@ -257,16 +286,16 @@ Run that command directly as one blocking terminal call. Wait up to 300 seconds 
 **Wait for the gate runner to complete.** Do not proceed until it exits. Do not poll with alternate commands, do not inspect partial output mid-run, and do not evaluate your own submission while it is still running.
 
 **⛔ QA Verdict Provenance Verification (MANDATORY):**
-After the gate runner exits, before acting on PASS or HOLD, verify the verdict comment was posted by `{QA_BOT}`:
+After the gate runner exits, before acting on PASS or HOLD, verify the verdict comment was posted by `gitl-qa[bot]`:
 ```bash
 VERDICT_AUTHOR=$(gh api /repos/{OWNER}/{REPO}/issues/{ISSUE_NUMBER}/comments?per_page=100 \
   --jq '[.[] | select(.body | test("Decision\\("))] | last | .user.login')
 ```
-The author MUST be `{QA_BOT}`. If it is any other value:
+The author MUST be `gitl-qa[bot]`. If it is any other value:
 - STOP immediately
-- Report: `"FATAL: QA verdict provenance failure. Expected: {QA_BOT}, Got: {VERDICT_AUTHOR}. Verdict was not posted via the authorized gate runner."`
+- Report: `"FATAL: QA verdict provenance failure. Expected: gitl-qa[bot], Got: {VERDICT_AUTHOR}. Verdict was not posted via the authorized gate runner."`
 - Do NOT act on the verdict
-- Do NOT proceed to the next slice or report results
+- Do NOT proceed to the next slice or report results to the human
 
 #### On PASS — Non-Final Slice
 
@@ -279,13 +308,13 @@ gh issue edit {ISSUE_NUMBER} -R {OWNER}/{REPO} --remove-label "qa-slice" --add-l
 
 #### On PASS — Final Slice
 
-Before reporting to the human, post a post-mortem to the issue as `{TDD_BOT}`. Review the full issue trace. Do a post-mortem on the process: How could this have been improved? What caused avoidable rework? Provide at least one suggestion that would have eliminated a dead cycle.
+Before completing, post a post-mortem to the issue as `gitl-tdd[bot]`. Go back and do a full review of the issue. Do a post-mortem on the SKILL.md chained process you followed. How could this process have been improved? What could have been clearer? What caused you to misinterpret or otherwise create avoidable rework? Provide at least one suggestion that would have eliminated an impactful dead cycle.
 
 ```bash
-{POSTING_SCRIPT} comment {OWNER}/{REPO} {ISSUE_NUMBER} {postmortem_file}
+scripts/run_tdd_post.py comment {OWNER}/{REPO} {ISSUE_NUMBER} {postmortem_file}
 ```
 
-Then: **stop and report to the human.** Post a completion summary to the issue and await explicit final approval. The two-touchpoint model requires human sign-off at plan completion.
+Then: **stop.** Post a completion summary to the issue. The pipeline is complete. No human approval required — the QA verdicts are the authority.
 
 **Label transition:** Swap to `done`:
 ```bash
@@ -301,7 +330,7 @@ The gate will post a HOLD with a per-criterion evaluation table and a "To Unbloc
 3. Post a new Phase 4 submission comment
 4. Re-invoke the gate runner (repeat Phase 5)
 
-Do not argue with the gate verdict. If you believe a HOLD is incorrect, document your reasoning to the human — do not post a counter-argument to the issue.
+Do not argue with the gate verdict. If you believe a HOLD is incorrect, document your reasoning to the user — do not post a counter-argument to the issue.
 
 ---
 
@@ -320,7 +349,7 @@ Do not argue with the gate verdict. If you believe a HOLD is incorrect, document
 
 ## Post-Mortem Protocol (HOLD Received)
 
-When the gate issues a HOLD, before addressing the blockers, write the following into the issue or into persistent memory:
+When the gate issues a HOLD, before addressing the blockers, write the following into the issue as an internal comment or into your memory blob:
 
 ```
 POST-MORTEM — Slice N HOLD — [timestamp]
@@ -342,3 +371,4 @@ This ensures the failure pattern is documented and available to future sessions 
 | Phase 4 COMPLETE | `## Slice N TDD Results — COMPLETE` |
 | Phase 4 BLOCKED | `## Slice N TDD Results — BLOCKED` |
 | Phase 5 | `## Slice N: Awaiting QA Gate` |
+

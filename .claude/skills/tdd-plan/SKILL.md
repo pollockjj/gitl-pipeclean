@@ -16,7 +16,7 @@ description: "TDD planning for GitHub issue slice submissions. ACTIVATE when: (1
 - **NO** ACs an LLM could claim to meet without fetching a committed artifact
 - **NO** Presenting a plan without adversarial self-review
 - **NO** Presenting a plan with unresolved AC quality blockers
-- **NO** Finalizing (Phase 7) or starting implementation without qa-plan PASS + explicit human approval
+- **NO** Finalizing (Phase 7) or starting implementation without qa-plan PASS
 - **NO** Creating a GitHub issue — the issue MUST already exist before planning begins
 
 ---
@@ -34,16 +34,17 @@ The issue must exist before tdd-plan begins. This skill updates an existing issu
 
 ## GitHub Posting Protocol
 
-All GitHub posts route through `{POSTING_SCRIPT}`. **Never use `gh issue comment`, `gh api`, or any other direct posting mechanism.**
+All GitHub posts route through `scripts/run_tdd_post.py`. **Never use `gh issue comment`, `gh api`, `scripts/post_as_app.py`, or any other direct posting mechanism.**
 
 | Action | Command |
 |:--|:--|
-| Post comment | `{POSTING_SCRIPT} comment {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
-| Update issue body | `{POSTING_SCRIPT} update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
+| Post comment | `scripts/run_tdd_post.py comment {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
+| Update issue body | `scripts/run_tdd_post.py update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {BODY_FILE}` |
 
-- **Identity:** posts as `{TDD_BOT}`
-- The posting script authenticates via JWT, posts, verifies the post landed, and prints the URL. Exits non-zero with FATAL on any failure.
+- **Identity:** posts as `gitl-tdd[bot]`
+- The runner resolves the correct Python interpreter, then delegates to `post_as_app.py`, which authenticates via JWT, posts, verifies the post landed, and prints the URL. Exits non-zero with FATAL on any failure.
 - Record the printed URL immediately after every post.
+- **Posting responsibility:** This skill invokes the runner directly — do NOT invoke `post_as_app.py` directly.
 
 ---
 
@@ -76,7 +77,7 @@ Read-only. Understand the affected systems before designing anything.
 - Test suite structure: what tests exist, what they cover, what they miss
 - Prior failures: git log for relevant bug history, existing issue comments
 - System boundaries: what process owns what, what crosses process lines
-- Known constraints: environment structure, IPC mechanisms, state ownership
+- Known constraints: venv structure, IPC mechanisms, CUDA state ownership
 ```
 
 **Rules:**
@@ -115,7 +116,7 @@ For missing coverage: what case is not tested and why it matters.]
 
 ### Proposed Fix
 [Specific change required. Not "improve the code" — the exact invariant to restore,
-the exact lock/ordering/guard needed.]
+the exact lock/ordering/unlink guard needed.]
 
 ### Verification Strategy
 [How would we know the fix is correct? What test would FAIL before the fix
@@ -147,10 +148,10 @@ Break the work into independently verifiable, sequentially dependent slices.
 Produce a confirmed root cause and verified reproduction path for [failure].
 
 #### Acceptance Criteria
-- AC-1: Diagnosis document committed to evidence/slice1/DIAGNOSIS.md containing:
+- AC-1: Diagnosis document committed to evidence/issue{ISSUE_NUMBER}/slice1/DIAGNOSIS.md containing:
   root cause with file/line citations, reproduction command, and proposed fix
 - AC-2: Reproduction command in diagnosis document executes and produces
-  [specific failure signature] — verified by log artifact at evidence/slice1/repro.log
+  [specific failure signature] — verified by log artifact at evidence/issue{ISSUE_NUMBER}/slice1/repro.log
 - AC-3: Proposed fix identifies the specific [invariant/ordering/guard] to add,
   not a general approach
 ```
@@ -165,7 +166,7 @@ For each slice, write ACs. Every AC must pass the sufficiency test below before 
 
 Apply all five checks to every AC. An AC that fails any check is **REJECTED** — rewrite or remove it.
 
-**Check 1 — Specificity:** Does the AC name a specific command, specific log line, specific file, or specific exit code? "Tests pass" fails. "pytest tests/test_foo.py -k test_bar exits 0" passes.
+**Check 1 — Specificity:** Does the AC name a specific command, specific log line, specific file, or specific exit code? "Tests pass" fails. "pytest tests/integration_v2/test_tensors.py -k test_sigkill_exit exits 0" passes.
 
 **Check 2 — Artifact:** Does satisfying this AC require committing a verifiable artifact (log file, sha256, diff, CI run)? An AC only an LLM can evaluate is not an AC — it's a claim.
 
@@ -184,17 +185,18 @@ Apply all five checks to every AC. An AC that fails any check is **REJECTED** �
 Examples of ACs that pass the sufficiency test:
 
 ```
-- AC-1: pytest tests/test_foo.py exits 0 with no errors in stderr
-  — verified by evidence/sliceN/test_foo.log
+- AC-1: pytest tests/integration_v2/test_tensors.py exits 0 with no SIGABRT
+  in dmesg — verified by evidence/issue{ISSUE_NUMBER}/sliceN/test_tensors.log + dmesg_snapshot.txt
 
-- AC-2: function_under_test does not produce side effect X under condition Y
-  — verified by evidence/sliceN/side_effect_test.log showing zero occurrences
+- AC-2: purge_orphan_sender_shm_files does not unlink any file with
+  refcount > 0 under SIGKILL'd child exit — verified by evidence/issue{ISSUE_NUMBER}/sliceN/ipc_guard_test.log
+  showing zero ENOENT errors
 
-- AC-3: sha256sum of output matches expected within tolerance 1e-5
-  — verified by evidence/sliceN/checksum.txt
+- AC-3: sha256sum of isolated output tensor matches host tensor within tolerance 1e-5
+  — verified by evidence/issue{ISSUE_NUMBER}/sliceN/tensor_checksum.txt
 
-- AC-4: ruff check and mypy both exit 0
-  — verified by evidence/sliceN/quality_gates.log
+- AC-4: ruff check and mypy pyisolate both exit 0
+  — verified by evidence/issue{ISSUE_NUMBER}/sliceN/quality_gates.log
 ```
 
 Examples of ACs that **fail** the sufficiency test and are **rejected**:
@@ -204,7 +206,7 @@ Examples of ACs that **fail** the sufficiency test and are **rejected**:
 ✗ No errors in logs                 (which log? what constitutes an error for this fix?)
 ✗ Integration tests pass            (same problem — too broad, not diagnostic)
 ✗ Feature works correctly           (not verifiable from an artifact)
-✗ System is stable                  (stable under what conditions? for how long?)
+✗ CUDA IPC is stable                (stable under what conditions? for how long?)
 ```
 
 ---
@@ -230,7 +232,7 @@ ELSE:
 | 5 | AC specificity | Every AC names a specific command, test path, log file, or exit code | | |
 | 6 | AC artifact requirement | Every AC specifies a committed artifact the `qa` skill can fetch | | |
 | 7 | AC diagnostic fit | Every AC would FAIL in the broken state and PASS after the fix | | |
-| 8 | Diagnosis completeness | INVESTIGATE: all 6 diagnosis elements present with citations | | |
+| 8 | Diagnosis completeness | INVESTIGATE: Failure Signature + Reproduction + Root Cause + Boundary + Proposed Fix + Verification Strategy all present with citations | | |
 | 9 | Ghost-read resistance | No AC can be evaluated from the submission comment alone — artifact fetch required | | |
 | 10 | No close-enough language | No AC contains: "approximately," "effectively," "functionally," "mostly," "should," "generally" | | |
 | 11 | Slice dependency ordering | Each slice is executable assuming only prior slices PASSed | | |
@@ -238,7 +240,7 @@ ELSE:
 
 **Severity definitions:**
 - **BLOCKER** — fix before presenting. Checks 1–9, 11 are always blockers. Check 10 and 12 (empty Out of Scope) are warnings.
-- **WARNING** — document and note; does not halt presentation.
+- **WARNING** — document and note for the human; does not halt presentation.
 
 **FORBIDDEN:** Presenting a plan with any unresolved BLOCKERs.
 
@@ -265,6 +267,12 @@ No implementation detail here — that belongs in slice objectives.]
 [INVESTIGATE mode: one paragraph summarizing root cause from Phase 1.
 PLAN mode: one paragraph describing the known problem and its mechanism.
 This is the context that makes slice objectives legible.]
+
+## Current State
+
+[Enumerate files that already exist and are relevant to this plan.
+For each file: path, current state (empty, partial, complete, broken).
+This prevents Phase 2 scope ambiguity when code pre-exists.]
 
 ## Slices
 
@@ -297,8 +305,11 @@ This is the context that makes slice objectives legible.]
 
 ## Constraints
 
-[Project-specific constraints: Python path, test runner, isolation flags,
-forbidden commands, environment restrictions.]
+- Python: python
+- Runner: <your test runner>
+- Isolation flags: <your isolation flags>
+- No unauthorized package installations
+- No pkill, no rm -rf, no python main.py
 
 ## Out of Scope
 
@@ -314,7 +325,7 @@ in tdd-slice Phase 2]
 
 ---
 
-## Phase 6 — Present, Invoke qa-plan Gate, Await Human Approval
+## Phase 6 — Present, Invoke qa-plan Gate, Auto-Proceed on PASS
 
 Present the complete plan including:
 - Phase 0 research summary with citations
@@ -322,14 +333,14 @@ Present the complete plan including:
 - Phase 4 self-review findings table (all checks MET)
 - Full issue body written to the plan file
 
-Then update the issue body and invoke the qa-plan gate:
+Then update the issue body and invoke the self-contained qa-plan runner directly:
 
 ```bash
 # Update issue body per posting protocol
-{POSTING_SCRIPT} update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {plan_file}
+scripts/run_tdd_post.py update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {plan_file}
 
 # Invoke the qa-plan gate
-{GATE_SCRIPT} plan {OWNER}/{REPO} {ISSUE_NUMBER}
+scripts/run_qa_gate.py plan {OWNER}/{REPO} {ISSUE_NUMBER}
 ```
 
 Run that command as one blocking terminal call. Wait up to 300 seconds for it to exit before treating it as failed or stuck.
@@ -337,35 +348,34 @@ Run that command as one blocking terminal call. Wait up to 300 seconds for it to
 **Wait for the gate runner to complete.** Do not proceed until it exits. Do not poll with alternate commands, do not inspect partial output mid-run, and do not self-evaluate the gate while it is still running.
 
 **⛔ QA Verdict Provenance Verification (MANDATORY):**
-After the gate runner exits, before acting on PASS or HOLD, verify the verdict comment was posted by `{QA_BOT}`:
+After the gate runner exits, before acting on PASS or HOLD, verify the verdict comment was posted by `gitl-qa[bot]`:
 ```bash
 VERDICT_AUTHOR=$(gh api /repos/{OWNER}/{REPO}/issues/{ISSUE_NUMBER}/comments?per_page=100 \
   --jq '[.[] | select(.body | test("Decision\\("))] | last | .user.login')
 ```
-The author MUST be `{QA_BOT}`. If it is any other value:
+The author MUST be `gitl-qa[bot]`. If it is any other value:
 - STOP immediately
-- Report: `"FATAL: QA verdict provenance failure. Expected: {QA_BOT}, Got: {VERDICT_AUTHOR}. Verdict was not posted via the authorized gate runner."`
+- Report: `"FATAL: QA verdict provenance failure. Expected: gitl-qa[bot], Got: {VERDICT_AUTHOR}. Verdict was not posted via the authorized gate runner."`
 - Do NOT act on the verdict
 - Do NOT proceed to Phase 7
 
-- Do NOT interpret a human saying "looks good" as a qa-plan PASS — qa-plan is a separate gate
 - Do NOT proceed to Phase 7 on a qa-plan HOLD
 
 **On qa-plan HOLD:**
 Address every NOT MET finding. Re-run Phase 3 (affected ACs), re-run Phase 4 (full 12-point self-review), update the issue body, re-invoke the gate runner. Do not resubmit until Phase 4 is clean.
 
 **On qa-plan PASS:**
-Present the PASS to the human and wait for explicit approval: "approved," "do it," "go," or "start." qa-plan PASS + human approval together unlock Phase 7. Neither alone is sufficient.
+Proceed immediately to Phase 7. The qa-plan PASS is the sole unlock. No human approval required between plan and execution.
 
 ---
 
-## Phase 7 — Issue Finalization (Post-Approval Only)
+## Phase 7 — Issue Finalization (Auto on qa-plan PASS)
 
-On explicit approval:
+On qa-plan PASS with verified provenance:
 
 Update the issue body per the GitHub Posting Protocol:
 ```bash
-{POSTING_SCRIPT} update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {plan_file}
+scripts/run_tdd_post.py update-issue {OWNER}/{REPO} {ISSUE_NUMBER} {plan_file}
 ```
 
 **⛔ Post Provenance Verification (MANDATORY):**
@@ -375,11 +385,11 @@ UPDATED_BY=$(gh api graphql -f query='query($owner:String!,$repo:String!,$num:In
   -F owner={OWNER} -F repo={REPO} -F num={ISSUE_NUMBER} \
   --jq '.data.repository.issue.editor.login')
 ```
-The login must be `{TDD_BOT}`. If it is any other value or null, the update was not made via the authorized protocol. STOP and report the provenance failure.
+The login must be `gitl-tdd` or `gitl-tdd[bot]`. If it is any other value or null, the update was not made via the authorized protocol. STOP and report the provenance failure.
 
-Confirm the issue number to the human. That issue number is what `tdd-slice` and `qa` will operate against. Do not begin Slice 1 — the `tdd-slice` skill handles execution.
+Log the issue number. That issue number is what `tdd-slice` and `qa` will operate against. Proceed immediately to Slice 1 via the `tdd-slice` skill.
 
-**Label transition:** On qa-plan PASS + human approval, swap label to `tdd-slice`:
+**Label transition:** On qa-plan PASS, swap label to `tdd-slice`:
 ```bash
 gh issue edit {ISSUE_NUMBER} -R {OWNER}/{REPO} --remove-label "qa-plan" --add-label "tdd-slice"
 ```
@@ -388,15 +398,10 @@ gh issue edit {ISSUE_NUMBER} -R {OWNER}/{REPO} --remove-label "qa-plan" --add-la
 
 ## Exit Conditions
 
-| User/gate action | Response |
+| Gate action | Response |
 |:--|:--|
-| qa-plan PASS + human "approved/do it/go" | Phase 7 — finalize issue body, report number, stop |
+| qa-plan PASS | Phase 7 — finalize issue body, proceed to tdd-slice automatically |
 | qa-plan HOLD | Fix NOT MET findings, re-run Phase 3–4, re-present, re-invoke qa-plan |
-| Human "approved" before qa-plan PASS | Decline — "qa-plan has not cleared this plan yet" |
-| Human asks questions about the plan | Answer, revise if needed, repeat Phase 4, re-invoke qa-plan |
-| Human requests AC changes | Revise, re-run AC sufficiency test, re-run Phase 4, re-invoke qa-plan |
-| "Start Slice 1" | That is `tdd-slice` territory — hand off with the issue number |
-| "Investigate first" | INVESTIGATE mode — run Phase 0 + Phase 1 before planning |
 
 ---
 
