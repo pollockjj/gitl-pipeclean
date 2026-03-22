@@ -161,47 +161,57 @@ Execute the code changes defined in the plan for this slice.
 
 ---
 
-### Phase 3 — Evidence Collection
+### Phase 3 — Evidence Collection (CI-Driven)
 
-Run tests per the TDD plan protocol. Collect and commit artifacts.
+Evidence is collected by CI, not by you. Your job is to push code to a branch that triggers the CI workflow. CI runs tests, commits evidence, and posts results.
 
-#### Evidence Manifest (MANDATORY)
+#### Workflow
 
-For every artifact you collect, record it before committing. This manifest is what the QA gate will fetch from.
+1. **Create a branch** named `issue{ISSUE_NUMBER}/slice{N}` from main
+2. **Commit your code changes** to that branch (implementation only — no test logs, no evidence artifacts)
+3. **Push the branch** — this triggers the `.github/workflows/slice-evidence.yml` workflow
+4. **Wait for CI to complete** — poll with `gh run list --branch issue{ISSUE_NUMBER}/slice{N}` until status is `completed`
+5. **Verify CI success** — `gh run view {RUN_ID} --json conclusion --jq '.conclusion'` must be `success`
+
+```bash
+# Create branch and push code
+git checkout -b issue{ISSUE_NUMBER}/slice{N}
+git add [your code files]
+git commit -m "issue{ISSUE_NUMBER} slice{N}: [description]"
+git push origin issue{ISSUE_NUMBER}/slice{N}
+
+# Wait for CI
+sleep 15
+RUN_ID=$(gh run list --branch issue{ISSUE_NUMBER}/slice{N} -R {OWNER}/{REPO} --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch $RUN_ID -R {OWNER}/{REPO}
+```
+
+**You do NOT run tests yourself.** You do NOT commit evidence artifacts. You do NOT run pytest. CI does all of this. If you run tests locally to verify your code works before pushing, that is fine — but those local results are not evidence. Only CI-committed artifacts count.
+
+#### Evidence Manifest
+
+After CI completes, the evidence manifest is what CI committed. Record it:
 
 ```
 EVIDENCE MANIFEST — Slice N
-[E-1] test-log     — evidence/issue{ISSUE_NUMBER}/sliceN/test_run.log     — SHA: <commit SHA>
-[E-2] checksum     — evidence/issue{ISSUE_NUMBER}/sliceN/output.sha256     — SHA: <commit SHA>
-[E-3] diff         — <commit SHA>                      — covers files: [list]
-[E-4] ci-run       — <Actions run URL or run ID>       — status: pass/fail
-...
+[E-1] ci-run       — <Actions run URL>                 — status: pass/fail
+[E-2] test-log     — evidence/issue{ISSUE_NUMBER}/sliceN/test_run.log     — SHA: <CI commit SHA>
+[E-3] checksums    — evidence/issue{ISSUE_NUMBER}/sliceN/sha256sums.txt   — SHA: <CI commit SHA>
 ```
+
+The CI commit SHA is different from your code commit SHA. The CI commit is authored by `github-actions[bot]`. This identity separation is structural — you cannot fabricate CI evidence.
 
 #### Collection Rules
 
-- Run exactly the commands specified in Phase 1 test protocol
-- Capture exactly the evidence specified — no substitutions
-- Save artifacts to `evidence/issue{ISSUE_NUMBER}/sliceN/`
-- Every artifact gets a sha256sum
-- Zero triage items unless explicitly waived in TDD plan
-- **Always use `pytest -v`** — verbose mode is mandatory so test names appear in logs. Quiet mode (`-q`) hides test names and causes INSUFFICIENT_EVIDENCE HOLDs.
-- **Commit all evidence in a single commit** before Phase 4 submission. One SHA to reference, not multiple.
+- **Always use `pytest -v`** — the CI workflow is configured to use verbose mode. If you need to override test commands, update the workflow, not the test invocation.
+- Evidence lives at `evidence/issue{ISSUE_NUMBER}/sliceN/` — canonical path, no exceptions.
+- If CI fails: read the run log, fix your code, push again to the same branch. CI will re-run.
 
-**If a test fails:** Do not proceed. Fix, re-run, re-collect. Report what broke and what you did.
+**⛔ Do NOT proceed to Phase 4 until CI completes successfully.**
 
-**If an AC cannot be verified with available evidence:** Do not invent evidence. Mark it explicitly as NOT DONE in Phase 4.
+If CI fails, do not proceed. Fix, push again, wait for CI. Report what broke and what you did.
 
-**⛔ Push and Verify Before Phase 4 (MANDATORY):**
-The QA gate fetches every artifact via the GitHub API. A commit that is not pushed is invisible to it. A Phase 4 submission citing an unreachable SHA is not evidence — it is a guaranteed HOLD with zero diagnostic value.
-
-```bash
-git push origin {branch}
-SHA=$(git rev-parse HEAD)
-REMOTE=$(gh api /repos/{OWNER}/{REPO}/commits/$SHA --jq '.sha')
-```
-
-If `$REMOTE` does not equal `$SHA`, **STOP**. Do not proceed to Phase 4. Fix the push, verify again, then continue.
+If an AC cannot be verified with CI evidence, do not invent evidence. Mark it explicitly as NOT DONE in Phase 4.
 
 ---
 
@@ -215,8 +225,10 @@ Post results to the GitHub issue as a structured submission comment. The QA gate
 ## Slice N TDD Results — [COMPLETE | BLOCKED]
 
 **Submitted:** [run: date -u +"%Y-%m-%dT%H:%M:%SZ"]
-**Commit SHA:** [full SHA of evidence commit]
-**Evidence directory:** evidence/issue{ISSUE_NUMBER}/sliceN/ @ [SHA]
+**Code commit SHA:** [full SHA of your code commit on the branch]
+**CI evidence commit SHA:** [full SHA of the CI-authored evidence commit]
+**CI run:** [GitHub Actions run URL]
+**Evidence directory:** evidence/issue{ISSUE_NUMBER}/sliceN/ @ [CI commit SHA]
 
 ### Evidence Manifest
 
