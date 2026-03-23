@@ -240,7 +240,6 @@ def run_claude(prompt: str, repo_root: Path, model: str) -> subprocess.Completed
         "--model",
         model,
         "--dangerously-skip-permissions",
-        "--verbose",
         "--add-dir",
         str(repo_root),
     ]
