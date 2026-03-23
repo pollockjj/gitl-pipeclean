@@ -69,42 +69,29 @@ def check_submission_provenance(submission_url: str, repo: str, gh_bin: str) -> 
 
 
 def check_plan_provenance(repo: str, issue: int, gh_bin: str) -> None:
-    """Verify that the issue body was last updated by the TDD bot."""
-    owner, repo_name = repo.split("/", 1)
-    graphql_query = (
-        "query($owner:String!, $repo:String!, $num:Int!){ "
-        "repository(owner:$owner,name:$repo){ "
-        "issue(number:$num){ editor { login } lastEditedAt } } }"
-    )
-    graphql_result = subprocess.run(
+    """Verify the last comment on the issue was posted by gitl-tdd[bot]."""
+    result = subprocess.run(
         [
             gh_bin,
             "api",
-            "graphql",
-            "-f",
-            f"query={graphql_query}",
-            "-F",
-            f"owner={owner}",
-            "-F",
-            f"repo={repo_name}",
-            "-F",
-            f"num={issue}",
+            f"/repos/{repo}/issues/{issue}/comments",
             "--jq",
-            ".data.repository.issue.editor.login",
+            ".[-1].user.login // empty",
         ],
         capture_output=True,
         text=True,
         check=False,
     )
-    if graphql_result.returncode != 0:
-        raise FatalError(f"Plan provenance failure: GraphQL call failed: {graphql_result.stderr.strip()}")
-    login = graphql_result.stdout.strip()
-    if not login or login == "null":
+    if result.returncode != 0:
+        raise FatalError(f"Plan provenance failure: gh api call failed: {result.stderr.strip()}")
+    last_author = result.stdout.strip()
+    if not last_author:
+        raise FatalError("Plan provenance failure: no comments on issue. TDD must post the plan first.")
+    if last_author != TDD_BOT_LOGIN:
         raise FatalError(
-            f"Plan provenance failure: issue has no editor.login — expected {TDD_BOT_LOGIN} to have updated it"
+            f"Plan provenance failure: last comment by {last_author!r}, expected {TDD_BOT_LOGIN}. "
+            "TDD must be the last poster before QA runs."
         )
-    if login not in TDD_BOT_LOGINS:
-        raise FatalError(f"Plan provenance failure: expected {TDD_BOT_LOGIN}, got {login!r}")
 
 
 def resolve_command(candidates: list[str]) -> str | None:

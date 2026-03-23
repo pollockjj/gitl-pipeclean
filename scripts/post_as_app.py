@@ -33,12 +33,20 @@ AGENTS = {
         "app_id": "3158490",
         "install_id": "118256592",
         "key": "gitl-tdd.pem",
+        "login": "gitl-tdd[bot]",
     },
     "qa": {
         "app_id": "3158523",
         "install_id": "118258230",
         "key": "gitl-qa.pem",
+        "login": "gitl-qa[bot]",
     },
+}
+
+# Incoming provenance: who must have posted last before this agent can post
+EXPECTED_LAST_POSTER = {
+    "tdd": {"gitl-qa[bot]", None},  # None = zero comments (first post)
+    "qa": {"gitl-tdd[bot]"},
 }
 
 
@@ -82,7 +90,57 @@ def _headers(token: str) -> dict:
     }
 
 
-def post_comment(token: str, repo: str, issue: int, body: str) -> str:
+def get_last_comment_author(token: str, repo: str, issue: int) -> str | None:
+    """Return the login of the last commenter, or None if no comments."""
+    r = requests.get(
+        f"https://api.github.com/repos/{repo}/issues/{issue}/comments?per_page=100",
+        headers=_headers(token),
+    )
+    r.raise_for_status()
+    comments = r.json()
+    if not comments:
+        return None
+    return comments[-1]["user"]["login"]
+
+
+def check_incoming_provenance(agent_id: str, token: str, repo: str, issue: int) -> None:
+    """Verify the last comment was posted by the expected identity."""
+    last_author = get_last_comment_author(token, repo, issue)
+    expected = EXPECTED_LAST_POSTER[agent_id]
+    if last_author not in expected:
+        expected_str = " or ".join(repr(e) for e in expected if e is not None) or "no comments"
+        actual_str = repr(last_author) if last_author else "no comments"
+        print(
+            f"FATAL: {agent_id.upper()} incoming provenance failure. "
+            f"Last comment by {actual_str}, expected {expected_str}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def check_outgoing_provenance(agent_id: str, token: str, repo: str, comment_id: int) -> None:
+    """Verify the comment we just posted is authored by the correct bot identity."""
+    expected_login = AGENTS[agent_id]["login"]
+    v = requests.get(
+        f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}",
+        headers=_headers(token),
+    )
+    v.raise_for_status()
+    actual_login = v.json()["user"]["login"]
+    if actual_login != expected_login:
+        print(
+            f"FATAL: {agent_id.upper()} outgoing provenance failure. "
+            f"Comment posted as {actual_login!r}, expected {expected_login!r}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def post_comment(token: str, repo: str, issue: int, body: str, agent_id: str | None = None) -> str:
+    # Incoming provenance check
+    if agent_id is not None:
+        check_incoming_provenance(agent_id, token, repo, issue)
+
     r = requests.post(
         f"https://api.github.com/repos/{repo}/issues/{issue}/comments",
         headers=_headers(token),
@@ -92,7 +150,11 @@ def post_comment(token: str, repo: str, issue: int, body: str) -> str:
     comment_id = r.json()["id"]
     html_url = r.json()["html_url"]
 
-    # Verify post landed
+    # Outgoing provenance check
+    if agent_id is not None:
+        check_outgoing_provenance(agent_id, token, repo, comment_id)
+
+    # Verify post content
     v = requests.get(
         f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}",
         headers=_headers(token),
@@ -209,7 +271,7 @@ def main():
         if args.issue is None:
             print("FATAL: comment action requires ISSUE_NUMBER", file=sys.stderr)
             sys.exit(2)
-        url = post_comment(token, args.repo, args.issue, body)
+        url = post_comment(token, args.repo, args.issue, body, agent_id=args.agent)
     elif args.action == "create-issue":
         if not args.title:
             print("FATAL: create-issue requires --title", file=sys.stderr)
