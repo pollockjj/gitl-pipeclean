@@ -50,6 +50,20 @@ def read_issue_body(repo: str, issue: int, gh_bin: str) -> str:
     return body
 
 
+def read_latest_tdd_comment(repo: str, issue: int, gh_bin: str) -> str:
+    """Read the latest comment by gitl-tdd[bot] on the issue — the plan lives here, not in the body."""
+    command = [
+        gh_bin, "api", f"/repos/{repo}/issues/{issue}/comments",
+        "--jq", '[.[] | select(.user.login=="gitl-tdd[bot]")] | last | .body',
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise FatalError(f"gh comment fetch failed: {result.stderr.strip() or result.stdout.strip()}")
+    body = result.stdout
+    require(body.strip() != "" and body.strip() != "null", "no gitl-tdd[bot] comment found on issue")
+    return body
+
+
 def check_submission_provenance(submission_url: str, repo: str, gh_bin: str) -> None:
     """Verify that the submission comment was posted by the TDD bot."""
     match = re.search(r"issuecomment-(\d+)", submission_url)
@@ -366,7 +380,7 @@ class GateRunner:
             check_submission_provenance(self.args.submission_comment_url, self.args.repo, self.gh_bin)
         check_plan_provenance(self.args.repo, self.args.issue, self.gh_bin)
         if self.args.mode == "plan":
-            plan_doc_file.write_text(read_issue_body(self.args.repo, self.args.issue, self.gh_bin), encoding="utf-8")
+            plan_doc_file.write_text(read_latest_tdd_comment(self.args.repo, self.args.issue, self.gh_bin), encoding="utf-8")
         prompt = build_prompt(
             self.args.mode,
             self.args.repo,
