@@ -59,10 +59,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq g++
-          # Pin CMake to 3.5 to match ACMOJ judge environment
-          wget -q https://cmake.org/files/v3.5/cmake-3.5.0-Linux-x86_64.tar.gz
-          tar xzf cmake-3.5.0-Linux-x86_64.tar.gz
-          sudo cp cmake-3.5.0-Linux-x86_64/bin/cmake /usr/local/bin/cmake
+          # Install CMake 4.0+ to match ACMOJ judge — rejects cmake_minimum_required(VERSION < 3.5)
+          pip install "cmake>=4.0"
           cmake --version
 
       - name: Build C++ code
