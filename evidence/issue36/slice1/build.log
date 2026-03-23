@@ -1,9 +1,25 @@
 Collecting cmake>=4.0
   Downloading cmake-4.3.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.5 kB)
 Downloading cmake-4.3.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (29.5 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 29.5/29.5 MB 194.8 MB/s  0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 29.5/29.5 MB 134.2 MB/s  0:00:00
 Installing collected packages: cmake
 Successfully installed cmake-4.3.0
-CMake Error: Compatibility with CMake < 3.5 has been removed from CMake.
-cmake_minimum_required(VERSION 3.01) is not supported.
-BUILD_EXIT_CODE: 1
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (3.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/runner/work/gitl-pipeclean/gitl-pipeclean
+[ 50%] Building CXX object CMakeFiles/code.dir/solution.cpp.o
+[100%] Linking CXX executable code
+[100%] Built target code
+BUILD_EXIT_CODE: 0
