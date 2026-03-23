@@ -1,0 +1,6 @@
+# Test log for issue36/slice1
+# Command: echo '1 1' | ./code
+# Input: 1 1
+# Output: 2
+# Expected Output: 2
+# Verdict: Accepted
