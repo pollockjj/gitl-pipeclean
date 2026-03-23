@@ -232,6 +232,21 @@ def run_copilot(gh_bin: str, prompt: str, repo_root: Path, model: str) -> subpro
     return invoke_shell_script(command)
 
 
+def run_claude(prompt: str, repo_root: Path, model: str) -> subprocess.CompletedProcess[str]:
+    command = [
+        "claude",
+        "-p",
+        prompt,
+        "--model",
+        model,
+        "--dangerously-skip-permissions",
+        "--verbose",
+        "--add-dir",
+        str(repo_root),
+    ]
+    return invoke_shell_script(command)
+
+
 def extract_verdict_block(mode: str, text: str) -> str:
     heading = "## QA Gate"
     pattern = re.compile(
@@ -351,11 +366,12 @@ class GateRunner:
         self.post_python = resolve_post_python()
         self.qa_backend = os.environ.get("QA_BACKEND", "copilot")
         self.qa_copilot_model = os.environ.get("QA_COPILOT_MODEL", "claude-opus-4.6")
+        self.qa_claude_model = os.environ.get("QA_CLAUDE_MODEL", "claude-opus-4.6")
         self.qa_codex_model = os.environ.get("QA_CODEX_MODEL", "gpt-5.4")
         self.qa_codex_reasoning_effort = os.environ.get("QA_CODEX_REASONING_EFFORT", "low")
         self.codex_bin = resolve_codex() if self.qa_backend == "codex" else None
-        if self.qa_backend not in {"codex", "copilot"}:
-            raise FatalError(f"unsupported QA_BACKEND '{self.qa_backend}' (expected 'codex' or 'copilot')")
+        if self.qa_backend not in {"codex", "copilot", "claude"}:
+            raise FatalError(f"unsupported QA_BACKEND '{self.qa_backend}' (expected 'codex', 'copilot', or 'claude')")
 
     def paths(self) -> tuple[Path, Path, Path | None, Path]:
         repo_name = self.args.repo.split("/")[-1]
@@ -405,6 +421,8 @@ class GateRunner:
 
         if self.qa_backend == "copilot":
             result = run_copilot(self.gh_bin, prompt, self.repo_root, self.qa_copilot_model)
+        elif self.qa_backend == "claude":
+            result = run_claude(prompt, self.repo_root, self.qa_claude_model)
         else:
             assert self.codex_bin is not None
             result = run_codex(
