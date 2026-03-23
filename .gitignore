@@ -2,3 +2,13 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+evidence/
+harness_tests/
+*.log
+*.json
+*.jsonl
+*.pdf
+*.docx
+*.md
+!.gitignore
+!.github/**
