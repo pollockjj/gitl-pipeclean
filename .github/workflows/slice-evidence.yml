@@ -1,0 +1,88 @@
+name: Slice Evidence Collection
+
+on:
+  push:
+    branches:
+      - 'issue*/slice*'
+
+jobs:
+  collect-evidence:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Verify workflow integrity
+        run: |
+          BRANCH_WF=$(git hash-object .github/workflows/slice-evidence.yml)
+          MAIN_WF=$(git show origin/main:.github/workflows/slice-evidence.yml | git hash-object --stdin)
+          if [ "$BRANCH_WF" != "$MAIN_WF" ]; then
+            echo "FATAL: Workflow file on branch does not match main."
+            echo "Branch SHA: $BRANCH_WF"
+            echo "Main SHA:   $MAIN_WF"
+            echo "Evidence from a tampered workflow is invalid."
+            exit 1
+          fi
+          echo "Workflow integrity verified: $BRANCH_WF"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pytest PyJWT cryptography requests
+
+      - name: Parse branch metadata
+        id: meta
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          ISSUE_NUM=$(echo "$BRANCH" | grep -oP '(?<=issue)\d+')
+          SLICE_NUM=$(echo "$BRANCH" | grep -oP '(?<=slice)\d+')
+          echo "issue=$ISSUE_NUM" >> $GITHUB_OUTPUT
+          echo "slice=$SLICE_NUM" >> $GITHUB_OUTPUT
+          echo "evidence_dir=evidence/issue${ISSUE_NUM}/slice${SLICE_NUM}" >> $GITHUB_OUTPUT
+          echo "Parsed: issue=$ISSUE_NUM slice=$SLICE_NUM"
+
+      - name: Create evidence directory
+        run: mkdir -p ${{ steps.meta.outputs.evidence_dir }}
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq g++
+          # Pin CMake to 3.5 to match ACMOJ judge environment
+          wget -q https://cmake.org/files/v3.5/cmake-3.5.0-Linux-x86_64.tar.gz
+          tar xzf cmake-3.5.0-Linux-x86_64.tar.gz
+          sudo cp cmake-3.5.0-Linux-x86_64/bin/cmake /usr/local/bin/cmake
+          cmake --version
+
+      - name: Build C++ code
+        run: |
+          cmake . && make
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v 2>&1 | tee ${{ steps.meta.outputs.evidence_dir }}/test_run.log
+          echo "EXIT_CODE: ${PIPESTATUS[0]}" >> ${{ steps.meta.outputs.evidence_dir }}/test_run.log
+
+      - name: Generate checksums
+        run: |
+          cd ${{ steps.meta.outputs.evidence_dir }}
+          sha256sum *.log > sha256sums.txt 2>/dev/null || true
+
+      - name: Commit evidence
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ${{ steps.meta.outputs.evidence_dir }}/
+          git commit -m "CI: collect evidence for issue #${{ steps.meta.outputs.issue }} slice ${{ steps.meta.outputs.slice }}" || echo "No changes to commit"
+          git push
