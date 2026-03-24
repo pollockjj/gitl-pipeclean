@@ -48,6 +48,8 @@ jobs:
       - name: Run judge
         env:
           PROBLEM_ID: ${{ vars.PROBLEM_ID }}
+          ACMOJ_TOKEN: ${{ secrets.ACMOJ_TOKEN }}
+          ACMOJ_PROBLEM_ID: ${{ vars.ACMOJ_PROBLEM_ID }}
           GITL_TDD_APP_ID: ${{ secrets.GITL_TDD_APP_ID }}
           GITL_TDD_INSTALL_ID: ${{ secrets.GITL_TDD_INSTALL_ID }}
           GITL_TDD_PEM: ${{ secrets.GITL_TDD_PEM }}
