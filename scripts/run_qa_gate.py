@@ -435,7 +435,8 @@ class GateRunner:
         transcript = (result.stdout or "") + (result.stderr or "")
         output_file.write_text(transcript, encoding="utf-8")
         if result.returncode != 0:
-            raise FatalError(f"QA backend '{self.qa_backend}' exited with code {result.returncode}. Transcript: {output_file}")
+            stderr_tail = (result.stderr or "")[-500:]
+            raise FatalError(f"QA backend '{self.qa_backend}' exited with code {result.returncode}. Transcript: {output_file}\nstderr tail: {stderr_tail}")
 
         comment_text = extract_verdict_block(self.args.mode, transcript)
         verdict = parse_verdict(comment_text, self.args.issue)
