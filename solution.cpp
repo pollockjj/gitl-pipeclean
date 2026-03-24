@@ -1,8 +1,8 @@
 #include <iostream>
 
 int main() {
-    int A = 0;
-    int B = 0;
+    long long A = 0;
+    long long B = 0;
     if (!(std::cin >> A >> B)) {
         return 0;
     }
