@@ -1,0 +1,9 @@
+Collecting cmake>=4.0
+  Downloading cmake-4.3.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.5 kB)
+Downloading cmake-4.3.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (29.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 29.5/29.5 MB 158.9 MB/s  0:00:00
+Installing collected packages: cmake
+Successfully installed cmake-4.3.0
+CMake Error: Compatibility with CMake < 3.5 has been removed from CMake.
+cmake_minimum_required(VERSION 3.01) is not supported.
+BUILD_EXIT_CODE: 1
