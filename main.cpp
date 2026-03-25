@@ -219,6 +219,7 @@ struct Contest {
         team.problems.resize(kMaxProblems);
         teams.push_back(team);
         team_id[name] = id;
+        rebuild_name_ranks();
         cout << "[Info]Add successfully.\n";
     }
 
@@ -228,6 +229,8 @@ struct Contest {
             return;
         }
         started = true;
+        frozen = false;
+        has_flushed = false;
         problem_count = problems;
         ranking_of_team.assign(teams.size(), 0);
         rebuild_name_ranks();
@@ -360,8 +363,9 @@ struct Contest {
             cout << "[Warning]Scoreboard is frozen. The ranking may be inaccurate until it were scrolled.\n";
         }
         int id = it->second;
-        int rank = (!has_flushed || ranking_of_team.empty()) ? name_rank_before_first_flush.at(name)
-                                                             : ranking_of_team[id];
+        int rank = (!started || !has_flushed || ranking_of_team.empty() || ranking_of_team[id] == 0)
+                       ? name_rank_before_first_flush.at(name)
+                       : ranking_of_team[id];
         cout << name << " NOW AT RANKING " << rank << '\n';
     }
 
