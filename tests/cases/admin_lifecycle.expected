@@ -1,0 +1,9 @@
+[Info]Add successfully.
+[Error]Add failed: duplicated team name.
+[Error]Scroll failed: scoreboard has not been frozen.
+[Info]Competition starts.
+[Error]Add failed: competition has started.
+[Error]Start failed: competition has started.
+[Info]Freeze scoreboard.
+[Error]Freeze failed: scoreboard has been frozen.
+[Info]Competition ends.
