@@ -335,7 +335,10 @@ def build_prompt(mode: str, repo: str, issue: int, skill_file: Path, plan_doc_fi
     return (
         "You are a stateless QA gate.\n\n"
         f"Read the full skill instructions from: {skill_file}\n\n"
-        f"The slice contract document is the GitHub issue body at: https://github.com/{repo}/issues/{issue}\n\n"
+        f"The issue is at: https://github.com/{repo}/issues/{issue}\n\n"
+        f"IMPORTANT: The slice acceptance criteria are in a COMMENT posted by gitl-tdd[bot], NOT in the issue body. "
+        f"The issue body is the problem description. The plan with ACs is in the latest gitl-tdd[bot] comment "
+        f"that contains '### Slice' and '#### Acceptance Criteria'. Fetch all comments and find it there.\n\n"
         f"Gate slice {{slice_number}} of issue {repo}#{issue}.\n"
         f"The decision line MUST be exactly: '### Decision({issue}): PASS' or '### Decision({issue}): HOLD'.\n"
         f"{submission_clause}\n\n"
