@@ -13,6 +13,11 @@
 using namespace std;
 using namespace __gnu_pbds;
 
+namespace {
+constexpr int kMaxProblems = 26;
+constexpr int kStatusKinds = 4;
+}
+
 struct ProblemState {
     int final_wrong = 0;
     bool final_solved = false;
@@ -35,7 +40,7 @@ struct Team {
     vector<int> visible_solve_times_desc;
     int frozen_problem_count = 0;
 
-    array<array<int, 4>, 26> latest_submission{};
+    array<array<int, kStatusKinds>, kMaxProblems> latest_submission{};
 
     void recompute_visible(int problem_count) {
         visible_solved = 0;
@@ -211,7 +216,7 @@ struct Contest {
         int id = static_cast<int>(teams.size());
         Team team;
         team.name = name;
-        team.problems.resize(26);
+        team.problems.resize(kMaxProblems);
         teams.push_back(team);
         team_id[name] = id;
         cout << "[Info]Add successfully.\n";
@@ -355,7 +360,8 @@ struct Contest {
             cout << "[Warning]Scoreboard is frozen. The ranking may be inaccurate until it were scrolled.\n";
         }
         int id = it->second;
-        int rank = has_flushed ? ranking_of_team[id] : name_rank_before_first_flush.at(name);
+        int rank = (!has_flushed || ranking_of_team.empty()) ? name_rank_before_first_flush.at(name)
+                                                             : ranking_of_team[id];
         cout << name << " NOW AT RANKING " << rank << '\n';
     }
 
