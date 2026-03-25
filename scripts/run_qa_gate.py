@@ -83,14 +83,20 @@ def check_submission_provenance(submission_url: str, repo: str, gh_bin: str) -> 
 
 
 def check_plan_provenance(repo: str, issue: int, gh_bin: str) -> None:
-    """Verify the last comment on the issue was posted by gitl-tdd[bot]."""
+    """Verify at least one gitl-tdd[bot] comment exists on the issue.
+
+    Melian FSM is the state authority — it decides when QA runs.
+    We only check that tdd has posted at least once (plan exists).
+    We do NOT check that tdd is the LAST poster, because in rework
+    cycles the previous QA HOLD may be the most recent comment.
+    """
     result = subprocess.run(
         [
             gh_bin,
             "api",
             f"/repos/{repo}/issues/{issue}/comments",
             "--jq",
-            ".[-1].user.login // empty",
+            '[.[] | select(.user.login=="gitl-tdd[bot]")] | length',
         ],
         capture_output=True,
         text=True,
@@ -98,14 +104,9 @@ def check_plan_provenance(repo: str, issue: int, gh_bin: str) -> None:
     )
     if result.returncode != 0:
         raise FatalError(f"Plan provenance failure: gh api call failed: {result.stderr.strip()}")
-    last_author = result.stdout.strip()
-    if not last_author:
-        raise FatalError("Plan provenance failure: no comments on issue. TDD must post the plan first.")
-    if last_author != TDD_BOT_LOGIN:
-        raise FatalError(
-            f"Plan provenance failure: last comment by {last_author!r}, expected {TDD_BOT_LOGIN}. "
-            "TDD must be the last poster before QA runs."
-        )
+    count = result.stdout.strip()
+    if not count or count == "0":
+        raise FatalError("Plan provenance failure: no gitl-tdd[bot] comments found. TDD must post first.")
 
 
 def resolve_command(candidates: list[str]) -> str | None:
