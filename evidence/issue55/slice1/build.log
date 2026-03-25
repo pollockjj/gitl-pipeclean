@@ -1,0 +1,30 @@
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/runner/work/gitl-pipeclean/gitl-pipeclean
+[ 50%] Building CXX object CMakeFiles/code.dir/main.cpp.o
+[100%] Linking CXX executable code
+[100%] Built target code
+FAIL: 1
+FAIL: 2
+FAIL: 3
+FAIL: 4
+FAIL: 5
+FAIL: 6
+FAIL: 7
+FAIL: big
+FAIL: bigger
+FAIL: error
+FAIL: small
+FAIL: test
+
+SCORE: 0/12
+PASSED: 0
+TOTAL: 12
+FAILED_CASES: 1 2 3 4 5 6 7 big bigger error small test
+BUILD_EXIT_CODE: 1
