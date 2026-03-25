@@ -137,9 +137,8 @@ def check_outgoing_provenance(agent_id: str, token: str, repo: str, comment_id: 
 
 
 def post_comment(token: str, repo: str, issue: int, body: str, agent_id: str | None = None) -> str:
-    # Incoming provenance check
-    if agent_id is not None:
-        check_incoming_provenance(agent_id, token, repo, issue)
+    # Incoming provenance check removed — Melian FSM is the state authority.
+    # Outgoing provenance check (below) still verifies post landed as correct bot.
 
     r = requests.post(
         f"https://api.github.com/repos/{repo}/issues/{issue}/comments",
