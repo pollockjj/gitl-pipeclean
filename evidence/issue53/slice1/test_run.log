@@ -1,0 +1,8 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.2, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.12.13/x64/bin/python
+cachedir: .pytest_cache
+rootdir: /home/runner/work/gitl-pipeclean/gitl-pipeclean
+collecting ... collected 0 items
+
+============================ no tests ran in 0.01s =============================
+EXIT_CODE: 0
